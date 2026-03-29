@@ -124,23 +124,41 @@ function enterApp(role) {
   document.getElementById('notifBtn').classList.toggle('hidden', role !== 'admin');
 
   const navItems = role === 'admin' ? [
-    { id: 'dashboard', icon: '◉', label: 'Dashboard' },
-    { id: 'interns',   icon: '👥', label: 'Interns' },
-    { id: 'reports',   icon: '📋', label: 'Weekly Reports' },
-    { id: 'tasks',     icon: '✓', label: 'All Tasks' },
+    { id: 'dashboard', icon: '◉', label: 'Dashboard', mobileLabel: 'Home' },
+    { id: 'interns',   icon: '👥', label: 'Interns', mobileLabel: 'Interns' },
+    { id: 'reports',   icon: '📋', label: 'Weekly Reports', mobileLabel: 'Reports' },
+    { id: 'tasks',     icon: '✓', label: 'All Tasks', mobileLabel: 'Tasks' },
   ] : [
-    { id: 'dashboard', icon: '◉', label: 'Dashboard' },
-    { id: 'tasks',     icon: '✓', label: 'My Tasks' },
-    { id: 'reports',   icon: '📋', label: 'Weekly Reports' },
+    { id: 'dashboard', icon: '◉', label: 'Dashboard', mobileLabel: 'Home' },
+    { id: 'tasks',     icon: '✓', label: 'My Tasks', mobileLabel: 'Tasks' },
+    { id: 'reports',   icon: '📋', label: 'Weekly Reports', mobileLabel: 'Reports' },
   ];
 
+  // Desktop sidebar nav
   document.getElementById('sidebarNav').innerHTML =
     `<div class="nav-section-label">Navigation</div>` +
     navItems.map(n => `
-      <button class="nav-item" data-page="${n.id}" onclick="navigateTo('${n.id}')">
+      <button class="nav-item" data-page="${n.id}" onclick="navigateTo('${n.id}'); closeMobileSidebar();">
         <span class="icon">${n.icon}</span> ${n.label}
       </button>
-    `).join('');
+    `).join('') +
+    `<div class="nav-section-label" style="margin-top:auto;"></div>
+     <button class="nav-item" onclick="handleLogout(); closeMobileSidebar();">
+       <span class="icon">⏻</span> Sign Out
+     </button>`;
+
+  // Mobile bottom nav
+  const logoutItem = { id: 'logout', icon: '⏻', mobileLabel: 'Logout' };
+  const mobileItems = [...navItems, logoutItem];
+  document.getElementById('mobileBottomNav').innerHTML =
+    mobileItems.map(n => n.id === 'logout'
+      ? `<button class="mobile-nav-item" onclick="handleLogout()">
+           <span class="mob-icon">${n.icon}</span>${n.mobileLabel}
+         </button>`
+      : `<button class="mobile-nav-item" data-page="${n.id}" onclick="navigateTo('${n.id}')">
+           <span class="mob-icon">${n.icon}</span>${n.mobileLabel}
+         </button>`
+    ).join('');
 
   navigateTo('dashboard');
   if (role === 'admin') loadNotifications();
@@ -148,11 +166,38 @@ function enterApp(role) {
 
 function navigateTo(page) {
   currentPage = page;
+  // Update sidebar active
   document.querySelectorAll('.nav-item').forEach(n => {
     n.classList.toggle('active', n.dataset.page === page);
   });
+  // Update mobile bottom nav active
+  document.querySelectorAll('.mobile-nav-item').forEach(n => {
+    n.classList.toggle('active', n.dataset.page === page);
+  });
+  // Show/hide back button (not on dashboard)
+  const showBack = page !== 'dashboard';
+  const mobileBack = document.getElementById('mobileBackBtn');
+  const desktopBack = document.getElementById('desktopBackBtn');
+  if (mobileBack) mobileBack.style.display = showBack ? 'flex' : 'none';
+  if (desktopBack) desktopBack.style.display = showBack ? 'flex' : 'none';
+
   const renderer = currentRole === 'admin' ? adminPages : internPages;
   if (renderer[page]) renderer[page]();
+}
+
+// ── Mobile Sidebar / Navigation ─────────────────────────────────────────────
+function toggleMobileSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebarOverlay').classList.toggle('active');
+}
+
+function closeMobileSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('active');
+}
+
+function handleMobileBack() {
+  navigateTo('dashboard');
 }
 
 // ── Notifications (admin only) ──────────────────────────────────────────────

@@ -78,12 +78,25 @@
       </div>
     </aside>
 
+    <!-- Mobile top bar -->
+    <header class="mobile-topbar" id="mobileTopbar">
+      <button class="btn-ghost btn-icon" id="mobileBackBtn" onclick="handleMobileBack()" style="display:none;">←</button>
+      <h2 class="mobile-topbar-title">indic8</h2>
+      <button class="btn-ghost btn-icon" id="mobileMenuBtn" onclick="toggleMobileSidebar()">☰</button>
+    </header>
+
+    <!-- Sidebar overlay for mobile -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeMobileSidebar()"></div>
+
     <!-- Main -->
     <main class="main-content">
       <header class="page-header">
-        <div>
-          <h1 id="pageTitle">Dashboard</h1>
-          <div class="subtitle" id="pageSubtitle"></div>
+        <div style="display:flex; align-items:center; gap:0.75rem;">
+          <button class="btn-ghost btn-icon back-btn" id="desktopBackBtn" onclick="handleMobileBack()" style="display:none;">←</button>
+          <div>
+            <h1 id="pageTitle">Dashboard</h1>
+            <div class="subtitle" id="pageSubtitle"></div>
+          </div>
         </div>
         <div class="header-actions">
           <button class="notification-btn" id="notifBtn" onclick="toggleNotifications()">
@@ -94,6 +107,9 @@
       </header>
       <div class="page-body" id="pageBody"></div>
     </main>
+
+    <!-- Mobile bottom nav -->
+    <nav class="mobile-bottom-nav" id="mobileBottomNav"></nav>
   </div>
 
   <!-- ═══ MODAL ═══ -->

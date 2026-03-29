@@ -930,6 +930,98 @@ textarea.form-input {
   font-size: 0.85rem;
 }
 
+/* ── Mobile Top Bar ──────────────────────────────────────────────────────── */
+.mobile-topbar {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  z-index: 110;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem;
+}
+
+.mobile-topbar-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--green-primary), #b9f6ca);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.mobile-topbar .btn-icon {
+  font-size: 1.3rem;
+  width: 40px;
+  height: 40px;
+}
+
+/* ── Mobile Bottom Nav ──────────────────────────────────────────────────── */
+.mobile-bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  z-index: 110;
+  align-items: center;
+  justify-content: space-around;
+  padding: 0 0.5rem;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.mobile-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.65rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  border-radius: var(--radius-md);
+  min-width: 60px;
+}
+
+.mobile-nav-item .mob-icon { font-size: 1.2rem; }
+
+.mobile-nav-item.active {
+  color: var(--green-primary);
+  background: var(--green-glow);
+}
+
+/* ── Sidebar Overlay ─────────────────────────────────────────────────────── */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 99;
+}
+
+.sidebar-overlay.active { display: block; }
+
+/* ── Back Button ─────────────────────────────────────────────────────────── */
+.back-btn {
+  font-size: 1.2rem;
+  width: 36px;
+  height: 36px;
+}
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 1024px) {
   .kanban-board { grid-template-columns: repeat(2, 1fr); }
@@ -937,13 +1029,87 @@ textarea.form-input {
 }
 
 @media (max-width: 768px) {
-  .sidebar { transform: translateX(-100%); }
+  .mobile-topbar { display: flex; }
+  .mobile-bottom-nav { display: flex; }
+
+  .sidebar {
+    transform: translateX(-100%);
+    z-index: 120;
+  }
   .sidebar.open { transform: translateX(0); }
-  .main-content { margin-left: 0; }
+
+  .main-content {
+    margin-left: 0;
+    padding-top: 56px;
+    padding-bottom: 64px;
+  }
+
+  .page-header {
+    padding: 1rem;
+    position: static;
+  }
+
+  .page-header h1 { font-size: 1.1rem; }
+
+  .page-body { padding: 1rem; }
+
   .kanban-board { grid-template-columns: 1fr; }
   .form-row { grid-template-columns: 1fr; }
-  .page-body { padding: 1rem; }
   .stats-grid { grid-template-columns: 1fr 1fr; }
+
+  .intern-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .intern-card .intern-stats {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .report-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .filter-bar {
+    flex-direction: column;
+  }
+
+  .search-input { min-width: 100%; }
+
+  .toast {
+    min-width: auto;
+    max-width: calc(100vw - 2rem);
+  }
+
+  .toast-container {
+    top: 4.5rem;
+    right: 1rem;
+    left: 1rem;
+  }
+
+  .modal {
+    width: 95%;
+    max-height: 80vh;
+    margin: 0 auto;
+  }
+
+  .data-table { font-size: 0.8rem; }
+  .data-table th, .data-table td { padding: 0.6rem 0.5rem; }
+
+  /* Hide some table columns on mobile */
+  .data-table .hide-mobile { display: none; }
+
+  .login-card { padding: 2rem 1.5rem; }
+}
+
+@media (max-width: 400px) {
+  .stats-grid { grid-template-columns: 1fr; }
+  .stat-card { padding: 1rem; }
+  .stat-card .stat-value { font-size: 1.5rem; }
 }
 
 /* ── Utility ─────────────────────────────────────────────────────────────── */
