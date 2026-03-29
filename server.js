@@ -318,12 +318,9 @@ app.put('/api/admin/notifications/read', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// ── SPA fallback (only for non-file, non-API routes) ────────────────────────
-app.use((req, res, next) => {
-  if (req.method === 'GET' && !req.path.startsWith('/api/') && !req.path.includes('.')) {
-    return res.sendFile(path.join(__dirname, 'public', 'index.html'));
-  }
-  next();
+// ── SPA fallback ────────────────────────────────────────────────────────────
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
