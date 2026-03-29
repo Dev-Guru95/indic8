@@ -1112,6 +1112,36 @@ textarea.form-input {
   .stat-card .stat-value { font-size: 1.5rem; }
 }
 
+/* ── Task List Card (mobile) ──────────────────────────────────────────────── */
+.task-list-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.task-list-card:hover {
+  border-color: #333;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Desktop / Mobile visibility ─────────────────────────────────────────── */
+.mobile-only { display: none; }
+.desktop-only { display: block; }
+
+@media (max-width: 768px) {
+  .mobile-only { display: flex !important; }
+  .desktop-only { display: none !important; }
+
+  .report-card { padding: 1rem; }
+  .report-body p { font-size: 0.85rem; }
+  .report-dates { font-size: 0.7rem; }
+
+  .kanban-column { min-height: auto; }
+}
+
 /* ── Utility ─────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 .mt-1 { margin-top: 0.5rem; }

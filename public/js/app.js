@@ -390,7 +390,9 @@ const internPages = {
         </div>
         ${tasks.length === 0
           ? '<div class="empty-state"><div class="icon">✓</div><h3>No tasks assigned yet</h3><p>Your admin will assign tasks to you.</p></div>'
-          : `<div class="kanban-board">
+          : `
+          <!-- Desktop: Kanban Board -->
+          <div class="kanban-board desktop-only">
           ${['todo', 'in_progress', 'review', 'completed'].map(status => `
             <div class="kanban-column">
               <div class="kanban-column-header">
@@ -411,7 +413,25 @@ const internPages = {
               </div>
             </div>
           `).join('')}
-        </div>`
+          </div>
+
+          <!-- Mobile: Task list cards -->
+          <div class="mobile-only" style="display:flex; flex-direction:column; gap:0.75rem;">
+            ${tasks.map(t => `
+              <div class="task-list-card" onclick="openInternTaskView(${t.id})">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;">
+                  <div style="font-weight:600; font-size:0.92rem;"><span class="priority-dot ${t.priority}"></span>${escHtml(t.title)}</div>
+                  ${statusBadge(t.status)}
+                </div>
+                ${t.description ? `<div style="font-size:0.78rem; color:var(--text-secondary); line-height:1.4; margin-bottom:0.5rem;">${escHtml(t.description).substring(0, 100)}${t.description.length > 100 ? '...' : ''}</div>` : ''}
+                <div style="display:flex; align-items:center; gap:1rem; font-size:0.75rem; color:var(--text-muted);">
+                  <span>${escHtml(t.category)}</span>
+                  <span>${statusBadge(t.priority)}</span>
+                  ${t.due_date ? `<span>Due ${t.due_date}</span>` : ''}
+                </div>
+              </div>
+            `).join('')}
+          </div>`
         }
       `;
     } catch (err) { document.getElementById('pageBody').innerHTML = `<p>${err.message}</p>`; }
@@ -430,12 +450,12 @@ const internPages = {
           reports.map(r => `
             <div class="report-card">
               <div class="report-header">
-                <div style="display:flex; align-items:center; gap:1rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
                   <span class="report-dates">${r.week_start} → ${r.week_end}</span>
                   ${statusBadge(r.status)}
                   <span class="mood-indicator" title="${r.mood}">${moodEmoji(r.mood)}</span>
+                  <span style="font-size:0.75rem; color:var(--text-muted);">${r.hours_worked}h</span>
                 </div>
-                <span style="font-size:0.78rem; color:var(--text-muted);">${r.hours_worked}h logged</span>
               </div>
               <div class="report-body">
                 <h4>Summary</h4>
@@ -715,7 +735,7 @@ const adminPages = {
             ? '<div class="empty-state"><div class="icon">📋</div><h3>No reports submitted yet</h3></div>'
             : reports.map(r => `
               <div class="report-card" data-search="${escHtml((r.intern_name + ' ' + r.summary).toLowerCase())}">
-                <div class="report-header">
+                <div class="report-header" style="flex-wrap:wrap; gap:0.5rem;">
                   <div class="report-author">
                     <div class="user-avatar" style="width:32px;height:32px;font-size:0.8rem;background:${r.avatar_color}">${r.intern_name.charAt(0)}</div>
                     <div>
@@ -723,7 +743,7 @@ const adminPages = {
                       <div style="font-size:0.75rem; color:var(--text-muted);">${escHtml(r.department)}</div>
                     </div>
                   </div>
-                  <div style="display:flex; align-items:center; gap:0.75rem;">
+                  <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
                     <span class="mood-indicator" title="${r.mood}">${moodEmoji(r.mood)}</span>
                     <span class="report-dates">${r.week_start} → ${r.week_end}</span>
                     ${statusBadge(r.status)}
@@ -735,10 +755,10 @@ const adminPages = {
                   ${r.challenges ? `<h4>Challenges</h4><p>${escHtml(r.challenges)}</p>` : ''}
                   ${r.plans_next_week ? `<h4>Plans for Next Week</h4><p>${escHtml(r.plans_next_week)}</p>` : ''}
                 </div>
-                <div style="display:flex; align-items:center; justify-content:space-between; margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border);">
-                  <span style="font-size:0.78rem; color:var(--text-muted);">${r.hours_worked}h logged · ${timeAgo(r.submitted_at)}</span>
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border); flex-wrap:wrap; gap:0.5rem;">
+                  <span style="font-size:0.78rem; color:var(--text-muted);">${r.hours_worked}h · ${timeAgo(r.submitted_at)}</span>
                   ${r.status !== 'reviewed'
-                    ? `<button class="btn btn-primary btn-sm" onclick="openReviewModal(${r.id})">Review & Respond</button>`
+                    ? `<button class="btn btn-primary btn-sm" onclick="openReviewModal(${r.id})">Review</button>`
                     : `<span class="badge badge-green">✓ Reviewed</span>`
                   }
                 </div>
@@ -767,7 +787,8 @@ const adminPages = {
           </div>
           <button class="btn btn-primary btn-sm" onclick="openAssignTaskModal()">+ Assign Task</button>
         </div>
-        <div class="card">
+        <!-- Desktop: Table view -->
+        <div class="card desktop-only">
           <div class="card-body" style="padding:0;">
             ${tasks.length === 0
               ? '<div class="empty-state"><div class="icon">✓</div><h3>No tasks yet</h3><p>Click "Assign Task" to give an intern work.</p></div>'
@@ -795,6 +816,30 @@ const adminPages = {
                 </table>`
             }
           </div>
+        </div>
+
+        <!-- Mobile: Card view -->
+        <div class="mobile-only" id="tasksCards" style="display:flex; flex-direction:column; gap:0.75rem;">
+          ${tasks.length === 0
+            ? '<div class="empty-state"><div class="icon">✓</div><h3>No tasks yet</h3><p>Click "Assign Task" to give an intern work.</p></div>'
+            : tasks.map(t => `
+              <div class="task-list-card" data-search="${escHtml((t.title + ' ' + t.intern_name).toLowerCase())}" onclick="openAdminTaskEdit(${t.id})">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.4rem;">
+                  <div style="font-weight:600; font-size:0.92rem;"><span class="priority-dot ${t.priority}"></span>${escHtml(t.title)}</div>
+                  ${statusBadge(t.status)}
+                </div>
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
+                  <div class="user-avatar" style="width:20px;height:20px;font-size:0.55rem;background:${t.avatar_color}">${t.intern_name.charAt(0)}</div>
+                  <span style="font-size:0.8rem; color:var(--text-secondary);">${escHtml(t.intern_name)}</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:0.75rem; font-size:0.75rem; color:var(--text-muted); flex-wrap:wrap;">
+                  <span>${escHtml(t.category)}</span>
+                  <span>${statusBadge(t.priority)}</span>
+                  ${t.due_date ? `<span>Due ${t.due_date}</span>` : ''}
+                </div>
+              </div>
+            `).join('')
+          }
         </div>
       `;
     } catch (err) { document.getElementById('pageBody').innerHTML = `<p>${err.message}</p>`; }
@@ -1115,8 +1160,13 @@ function filterReports(q) {
 
 function filterTasks(q) {
   q = q.toLowerCase();
+  // Filter desktop table
   document.querySelectorAll('#tasksTable tbody tr').forEach(el => {
-    el.style.display = el.dataset.search.includes(q) ? '' : 'none';
+    el.style.display = el.dataset.search && el.dataset.search.includes(q) ? '' : 'none';
+  });
+  // Filter mobile cards
+  document.querySelectorAll('#tasksCards .task-list-card').forEach(el => {
+    el.style.display = el.dataset.search && el.dataset.search.includes(q) ? '' : 'none';
   });
 }
 
