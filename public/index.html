@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>indic8 — Intern Management System</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <!-- ═══ Toast Container ═══ -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- ═══ LANDING / ROLE SELECT ═══ -->
+  <div id="landingScreen" class="login-screen">
+    <div class="login-container">
+      <div class="login-card">
+        <div class="login-logo">
+          <h1>indic8</h1>
+          <p>Intern Management System</p>
+        </div>
+
+        <!-- Role selection tabs -->
+        <div class="login-tabs">
+          <button class="login-tab active" onclick="switchLandingTab('intern')">Intern</button>
+          <button class="login-tab" onclick="switchLandingTab('admin')">Admin</button>
+        </div>
+
+        <!-- Intern: just pick your name -->
+        <div id="internSelectPanel">
+          <div class="form-group">
+            <label>Select Your Name</label>
+            <select class="form-input" id="internSelector">
+              <option value="">Loading interns...</option>
+            </select>
+          </div>
+          <button class="btn btn-primary btn-full" onclick="enterAsIntern()">Continue</button>
+          <p style="text-align:center; margin-top:1rem; font-size:0.85rem; color:var(--text-muted)">
+            Don't see your name? Contact your administrator.
+          </p>
+        </div>
+
+        <!-- Admin: login required -->
+        <form id="adminLoginForm" class="hidden" onsubmit="return handleAdminLogin(event)">
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" class="form-input" id="loginAdminUser" placeholder="Admin username" required>
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" class="form-input" id="loginAdminPass" placeholder="Enter password" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">Sign In as Admin</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ APP LAYOUT ═══ -->
+  <div id="appLayout" class="app-layout hidden">
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h2>indic8</h2>
+        <span id="sidebarRoleLabel">Dashboard</span>
+      </div>
+      <nav class="sidebar-nav" id="sidebarNav"></nav>
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <div class="user-avatar" id="userAvatar" style="background:var(--green-primary)">A</div>
+          <div class="user-meta">
+            <div class="name" id="userName">User</div>
+            <div class="role" id="userRole">Role</div>
+          </div>
+          <button class="btn-ghost btn-icon" onclick="handleLogout()" title="Back to home">⏻</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main-content">
+      <header class="page-header">
+        <div>
+          <h1 id="pageTitle">Dashboard</h1>
+          <div class="subtitle" id="pageSubtitle"></div>
+        </div>
+        <div class="header-actions">
+          <button class="notification-btn" id="notifBtn" onclick="toggleNotifications()">
+            🔔
+            <span class="notification-badge hidden" id="notifBadge">0</span>
+          </button>
+        </div>
+      </header>
+      <div class="page-body" id="pageBody"></div>
+    </main>
+  </div>
+
+  <!-- ═══ MODAL ═══ -->
+  <div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle">Modal</h2>
+        <button class="btn-ghost btn-icon" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+      <div class="modal-footer" id="modalFooter"></div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>

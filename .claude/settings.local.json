@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(npm init:*)",
+      "Bash(npm install:*)",
+      "Bash(npm ls:*)",
+      "Bash(curl -s http://localhost:3000/api/session)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(curl -s http://localhost:3000/api/interns)",
+      "Bash(node:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
