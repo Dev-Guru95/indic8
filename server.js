@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 // ── Database Setup (with proper pool config) ────────────────────────────────
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: true } : false,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
   max: 20,
   min: 2,
   idleTimeoutMillis: 30000,
