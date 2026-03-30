@@ -956,9 +956,7 @@ function openAddInternModal() {
           <label>Department</label>
           <select class="form-input" id="addInternDept" required>
             <option value="">Select...</option>
-            <option>Engineering</option><option>Design</option><option>Marketing</option>
-            <option>Data Science</option><option>Product</option><option>Operations</option>
-            <option>Finance</option><option>HR</option>
+            <option>Junior Dev</option><option>Digital Marketer</option><option>Graphics Designer</option><option>Video Editor</option>
           </select>
         </div>
         <div class="form-group">
