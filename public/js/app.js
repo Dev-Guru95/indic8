@@ -272,6 +272,12 @@ function statusBadge(status) {
   return `<span class="badge ${map[status] || 'badge-gray'}">${label}</span>`;
 }
 
+function scoreBadge(score) {
+  if (score == null) return '';
+  const cls = score >= 80 ? 'badge-green' : score >= 60 ? 'badge-orange' : 'badge-red';
+  return `<span class="badge ${cls}">${score}%</span>`;
+}
+
 function getCurrentWeek() {
   const now = new Date();
   const day = now.getDay();
@@ -325,6 +331,11 @@ const internPages = {
             <div class="stat-icon green">📊</div>
             <div class="stat-value">${pct}%</div>
             <div class="stat-label">Completion Rate</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon ${stats.avgScore != null && stats.avgScore >= 80 ? 'green' : stats.avgScore != null && stats.avgScore >= 60 ? 'orange' : 'blue'}">★</div>
+            <div class="stat-value">${stats.avgScore != null ? stats.avgScore + '%' : '—'}</div>
+            <div class="stat-label">Avg Score</div>
           </div>
         </div>
         <div class="content-grid">
@@ -407,6 +418,7 @@ const internPages = {
                     <div class="task-meta">
                       <span>${escHtml(t.category)}</span>
                       ${t.due_date ? `<span>Due ${t.due_date}</span>` : ''}
+                      ${t.score != null ? scoreBadge(t.score) : ''}
                     </div>
                   </div>
                 `).join('')}
@@ -428,6 +440,7 @@ const internPages = {
                   <span>${escHtml(t.category)}</span>
                   <span>${statusBadge(t.priority)}</span>
                   ${t.due_date ? `<span>Due ${t.due_date}</span>` : ''}
+                  ${t.score != null ? scoreBadge(t.score) : ''}
                 </div>
               </div>
             `).join('')}
@@ -507,6 +520,14 @@ async function openInternTaskView(taskId) {
           <div style="font-weight:600; margin-top:0.25rem; font-family:'JetBrains Mono',monospace;">${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
         </div>
       </div>
+      ${t.score != null ? `
+      <div style="margin-top:1rem; padding:1rem; background:var(--bg-input); border-radius:var(--radius-md); display:flex; align-items:center; justify-content:space-between;">
+        <div>
+          <div style="font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Performance Score</div>
+          <div style="font-weight:700; font-size:1.25rem; margin-top:0.25rem; color:${t.score >= 80 ? 'var(--green-primary)' : t.score >= 60 ? 'var(--warning)' : 'var(--danger)'};">${t.score}%</div>
+        </div>
+        <div style="font-size:0.78rem; color:var(--text-secondary);">${t.score >= 80 ? 'Meets benchmark' : t.score >= 60 ? 'Below benchmark' : 'Needs improvement'}</div>
+      </div>` : ''}
     </div>
     <div class="form-group">
       <label>Update Progress</label>
@@ -637,6 +658,11 @@ const adminPages = {
             <div class="stat-icon green">📊</div>
             <div class="stat-value">${taskPct}%</div>
             <div class="stat-label">Task Completion</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon ${stats.avgScore != null && stats.avgScore >= 80 ? 'green' : stats.avgScore != null && stats.avgScore >= 60 ? 'orange' : 'blue'}">★</div>
+            <div class="stat-value">${stats.avgScore != null ? stats.avgScore + '%' : '—'}</div>
+            <div class="stat-label">Avg Score</div>
           </div>
         </div>
         <div class="content-grid">
@@ -793,7 +819,7 @@ const adminPages = {
             ${tasks.length === 0
               ? '<div class="empty-state"><div class="icon">✓</div><h3>No tasks yet</h3><p>Click "Assign Task" to give an intern work.</p></div>'
               : `<table class="data-table" id="tasksTable">
-                  <thead><tr><th>Task</th><th>Assigned To</th><th>Category</th><th>Priority</th><th>Status</th><th>Due</th><th></th></tr></thead>
+                  <thead><tr><th>Task</th><th>Assigned To</th><th>Category</th><th>Priority</th><th>Status</th><th>Score</th><th>Due</th><th></th></tr></thead>
                   <tbody>
                     ${tasks.map(t => `
                       <tr data-search="${escHtml((t.title + ' ' + t.intern_name).toLowerCase())}">
@@ -805,6 +831,7 @@ const adminPages = {
                         <td><span style="font-size:0.82rem; color:var(--text-secondary)">${escHtml(t.category)}</span></td>
                         <td><span class="priority-dot ${t.priority}"></span>${t.priority}</td>
                         <td>${statusBadge(t.status)}</td>
+                        <td>${t.score != null ? scoreBadge(t.score) : '<span style="color:var(--text-muted);">—</span>'}</td>
                         <td style="font-size:0.82rem; color:var(--text-muted); font-family:'JetBrains Mono',monospace;">${t.due_date || '—'}</td>
                         <td>
                           <button class="btn-ghost btn-icon" onclick="openAdminTaskEdit(${t.id})" title="Edit">✎</button>
@@ -836,6 +863,7 @@ const adminPages = {
                   <span>${escHtml(t.category)}</span>
                   <span>${statusBadge(t.priority)}</span>
                   ${t.due_date ? `<span>Due ${t.due_date}</span>` : ''}
+                  ${t.score != null ? scoreBadge(t.score) : ''}
                 </div>
               </div>
             `).join('')
@@ -1096,7 +1124,7 @@ async function openAdminTaskEdit(taskId) {
       <div class="form-row">
         <div class="form-group">
           <label>Status</label>
-          <select class="form-input" id="editAdminStatus">
+          <select class="form-input" id="editAdminStatus" onchange="document.getElementById('scoreGroup').style.display = this.value === 'completed' ? '' : 'none'">
             ${['todo','in_progress','review','completed'].map(s =>
               `<option value="${s}" ${t.status === s ? 'selected' : ''}>${s.replace(/_/g,' ')}</option>`).join('')}
           </select>
@@ -1104,6 +1132,13 @@ async function openAdminTaskEdit(taskId) {
         <div class="form-group">
           <label>Due Date</label>
           <input type="date" class="form-input" id="editAdminDue" value="${t.due_date || ''}">
+        </div>
+      </div>
+      <div class="form-group" id="scoreGroup" style="display:${t.status === 'completed' ? '' : 'none'}">
+        <label>Performance Score <span style="font-size:0.75rem; color:var(--text-muted);">(0–100, benchmark: 80%)</span></label>
+        <input type="number" class="form-input" id="editAdminScore" min="0" max="100" value="${t.score != null ? t.score : 80}" placeholder="80">
+        <div style="margin-top:0.5rem; font-size:0.75rem; color:var(--text-secondary);">
+          Rate quality, speed, and overall performance. 80% = meets expectations.
         </div>
       </div>
     </form>
@@ -1118,18 +1153,21 @@ async function openAdminTaskEdit(taskId) {
 async function submitAdminTaskEdit(e, taskId) {
   e.preventDefault();
   try {
-    await api(`/api/admin/tasks/${taskId}`, {
-      method: 'PUT',
-      body: {
-        intern_id: parseInt(document.getElementById('editAdminIntern').value),
-        title: document.getElementById('editAdminTitle').value,
-        description: document.getElementById('editAdminDesc').value,
-        category: document.getElementById('editAdminCategory').value,
-        priority: document.getElementById('editAdminPriority').value,
-        status: document.getElementById('editAdminStatus').value,
-        due_date: document.getElementById('editAdminDue').value || null,
-      }
-    });
+    const taskStatus = document.getElementById('editAdminStatus').value;
+    const body = {
+      intern_id: parseInt(document.getElementById('editAdminIntern').value),
+      title: document.getElementById('editAdminTitle').value,
+      description: document.getElementById('editAdminDesc').value,
+      category: document.getElementById('editAdminCategory').value,
+      priority: document.getElementById('editAdminPriority').value,
+      status: taskStatus,
+      due_date: document.getElementById('editAdminDue').value || null,
+    };
+    if (taskStatus === 'completed') {
+      const scoreVal = parseInt(document.getElementById('editAdminScore').value);
+      body.score = isNaN(scoreVal) ? 80 : Math.min(100, Math.max(0, scoreVal));
+    }
+    await api(`/api/admin/tasks/${taskId}`, { method: 'PUT', body });
     closeModal(); toast('Task updated!'); navigateTo('tasks');
   } catch (err) { toast(err.message, 'error'); }
   return false;

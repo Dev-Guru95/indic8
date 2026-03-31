@@ -68,8 +68,11 @@ async function initDB() {
         status TEXT DEFAULT 'todo',
         due_date DATE,
         completed_at TIMESTAMPTZ,
+        score INTEGER,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS score INTEGER;
 
       CREATE TABLE IF NOT EXISTS notifications (
         id SERIAL PRIMARY KEY,
@@ -276,7 +279,7 @@ app.get('/api/interns/:id/reports', async (req, res) => {
 app.get('/api/interns/:id/tasks', async (req, res) => {
   try {
     if (!isPositiveInt(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
-    const tasks = await query('SELECT id, intern_id, title, description, category, priority, status, due_date, completed_at, created_at FROM tasks WHERE intern_id = $1 ORDER BY created_at DESC LIMIT 100', [req.params.id]);
+    const tasks = await query('SELECT id, intern_id, title, description, category, priority, status, due_date, completed_at, score, created_at FROM tasks WHERE intern_id = $1 ORDER BY created_at DESC LIMIT 100', [req.params.id]);
     res.json(tasks);
   } catch (e) { res.status(500).json(safeError(e)); }
 });
@@ -288,9 +291,9 @@ app.put('/api/interns/:internId/tasks/:taskId/status', async (req, res) => {
     if (!VALID_STATUSES.task.includes(status)) return res.status(400).json({ error: 'Invalid status' });
     const completed_at = status === 'completed' ? new Date().toISOString() : null;
 
-    // Single query to update and return task+intern info
+    // Clear score when un-completing a task (admin will re-score)
     const updated = await queryOne(
-      `UPDATE tasks SET status=$1, completed_at=$2 WHERE id=$3 AND intern_id=$4
+      `UPDATE tasks SET status=$1, completed_at=$2, score = CASE WHEN $1 = 'completed' THEN score ELSE NULL END WHERE id=$3 AND intern_id=$4
        RETURNING id, title, (SELECT full_name FROM interns WHERE id = $4) as intern_name`,
       [status, completed_at, req.params.taskId, req.params.internId]
     );
@@ -316,9 +319,10 @@ app.get('/api/interns/:id/stats', async (req, res) => {
           (SELECT COUNT(*) FROM tasks WHERE intern_id = $1) as total_tasks,
           (SELECT COUNT(*) FROM tasks WHERE intern_id = $1 AND status = 'completed') as completed_tasks,
           (SELECT COUNT(*) FROM tasks WHERE intern_id = $1 AND status IN ('todo','in_progress')) as pending_tasks,
-          (SELECT COUNT(*) FROM weekly_reports WHERE intern_id = $1) as total_reports
+          (SELECT COUNT(*) FROM weekly_reports WHERE intern_id = $1) as total_reports,
+          (SELECT ROUND(AVG(score)) FROM tasks WHERE intern_id = $1 AND score IS NOT NULL) as avg_score
       `, [id]),
-      query('SELECT id, title, category, priority, status, due_date, created_at FROM tasks WHERE intern_id = $1 ORDER BY created_at DESC LIMIT 5', [id])
+      query('SELECT id, title, category, priority, status, due_date, score, created_at FROM tasks WHERE intern_id = $1 ORDER BY created_at DESC LIMIT 5', [id])
     ]);
 
     res.json({
@@ -326,6 +330,7 @@ app.get('/api/interns/:id/stats', async (req, res) => {
       completedTasks: +counts.completed_tasks,
       pendingTasks: +counts.pending_tasks,
       totalReports: +counts.total_reports,
+      avgScore: counts.avg_score ? +counts.avg_score : null,
       recentTasks
     });
   } catch (e) { res.status(500).json(safeError(e)); }
@@ -430,7 +435,7 @@ app.put('/api/admin/reports/:id', requireAdmin, async (req, res) => {
 app.get('/api/admin/tasks', requireAdmin, async (req, res) => {
   try {
     const tasks = await query(`
-      SELECT t.id, t.intern_id, t.title, t.description, t.category, t.priority, t.status, t.due_date, t.completed_at, t.created_at,
+      SELECT t.id, t.intern_id, t.title, t.description, t.category, t.priority, t.status, t.due_date, t.completed_at, t.score, t.created_at,
              i.full_name as intern_name, i.department, i.avatar_color
       FROM tasks t
       JOIN interns i ON t.intern_id = i.id
@@ -483,9 +488,10 @@ app.put('/api/admin/tasks/:id', requireAdmin, async (req, res) => {
     if (due_date && !isValidDate(due_date)) return res.status(400).json({ error: 'Invalid due date' });
 
     const completed_at = status === 'completed' ? new Date().toISOString() : null;
+    const score = status === 'completed' && req.body.score != null ? Math.min(100, Math.max(0, parseInt(req.body.score) || 0)) : null;
     await pool.query(
-      'UPDATE tasks SET intern_id=$1, title=$2, description=$3, category=$4, priority=$5, status=$6, due_date=$7, completed_at=$8 WHERE id=$9',
-      [intern_id, title, description, category, priority, status, due_date || null, completed_at, req.params.id]
+      'UPDATE tasks SET intern_id=$1, title=$2, description=$3, category=$4, priority=$5, status=$6, due_date=$7, completed_at=$8, score=$9 WHERE id=$10',
+      [intern_id, title, description, category, priority, status, due_date || null, completed_at, score, req.params.id]
     );
     res.json({ success: true });
   } catch (e) { res.status(500).json(safeError(e)); }
@@ -509,7 +515,8 @@ app.get('/api/admin/stats', requireAdmin, async (req, res) => {
           (SELECT COUNT(*) FROM weekly_reports) as total_reports,
           (SELECT COUNT(*) FROM weekly_reports WHERE status = 'submitted') as pending_reports,
           (SELECT COUNT(*) FROM tasks) as total_tasks,
-          (SELECT COUNT(*) FROM tasks WHERE status = 'completed') as completed_tasks
+          (SELECT COUNT(*) FROM tasks WHERE status = 'completed') as completed_tasks,
+          (SELECT ROUND(AVG(score)) FROM tasks WHERE score IS NOT NULL) as avg_score
       `),
       query(`
         SELECT wr.id, wr.week_start, wr.mood, wr.status, wr.submitted_at,
@@ -526,6 +533,7 @@ app.get('/api/admin/stats', requireAdmin, async (req, res) => {
       pendingReports: +counts.pending_reports,
       totalTasks: +counts.total_tasks,
       completedTasks: +counts.completed_tasks,
+      avgScore: counts.avg_score ? +counts.avg_score : null,
       recentReports,
       departmentStats
     });
