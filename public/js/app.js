@@ -129,9 +129,10 @@ function enterApp(role) {
     { id: 'reports',   icon: '📋', label: 'Weekly Reports', mobileLabel: 'Reports' },
     { id: 'tasks',     icon: '✓', label: 'All Tasks', mobileLabel: 'Tasks' },
   ] : [
-    { id: 'dashboard', icon: '◉', label: 'Dashboard', mobileLabel: 'Home' },
-    { id: 'tasks',     icon: '✓', label: 'My Tasks', mobileLabel: 'Tasks' },
-    { id: 'reports',   icon: '📋', label: 'Weekly Reports', mobileLabel: 'Reports' },
+    { id: 'dashboard',    icon: '◉', label: 'Dashboard', mobileLabel: 'Home' },
+    { id: 'performance',  icon: '★', label: 'My Performance', mobileLabel: 'Performance' },
+    { id: 'tasks',        icon: '✓', label: 'My Tasks', mobileLabel: 'Tasks' },
+    { id: 'reports',      icon: '📋', label: 'Weekly Reports', mobileLabel: 'Reports' },
   ];
 
   // Desktop sidebar nav
@@ -332,10 +333,10 @@ const internPages = {
             <div class="stat-value">${pct}%</div>
             <div class="stat-label">Completion Rate</div>
           </div>
-          <div class="stat-card">
+          <div class="stat-card" style="cursor:pointer;" onclick="navigateTo('performance')">
             <div class="stat-icon ${stats.avgScore != null && stats.avgScore >= 80 ? 'green' : stats.avgScore != null && stats.avgScore >= 60 ? 'orange' : 'blue'}">★</div>
             <div class="stat-value">${stats.avgScore != null ? stats.avgScore + '%' : '—'}</div>
-            <div class="stat-label">Avg Score</div>
+            <div class="stat-label">Avg Score <span style="font-size:0.7rem; color:var(--green-primary);">View details →</span></div>
           </div>
         </div>
         <div class="content-grid">
@@ -446,6 +447,172 @@ const internPages = {
             `).join('')}
           </div>`
         }
+      `;
+    } catch (err) { document.getElementById('pageBody').innerHTML = `<p>${err.message}</p>`; }
+  },
+
+  async performance() {
+    setPage('My Performance', 'Track how your work is being scored over time');
+    try {
+      const data = await api(`/api/interns/${currentUser.id}/performance`);
+      const o = data.overview;
+      const hasData = o.scoredTasks > 0;
+      const benchmarkPct = hasData ? Math.round(o.aboveBenchmark / o.scoredTasks * 100) : 0;
+
+      // Build monthly trend bars (CSS-based chart)
+      let trendHtml = '';
+      if (data.monthlyTrend.length > 0) {
+        const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        trendHtml = `
+          <div class="card">
+            <div class="card-header"><h3>Score Trend</h3></div>
+            <div class="card-body">
+              <div class="perf-chart">
+                ${data.monthlyTrend.map(m => {
+                  const [y, mo] = m.month.split('-');
+                  const label = monthNames[parseInt(mo) - 1] + ' ' + y.slice(2);
+                  const score = +m.avg_score;
+                  const color = score >= 80 ? 'var(--green-primary)' : score >= 60 ? 'var(--warning)' : 'var(--danger)';
+                  return `
+                    <div class="perf-chart-bar-wrap">
+                      <div class="perf-chart-value" style="color:${color}">${score}%</div>
+                      <div class="perf-chart-bar-bg">
+                        <div class="perf-chart-bar-fill" style="height:${score}%;background:${color}"></div>
+                        <div class="perf-chart-benchmark"></div>
+                      </div>
+                      <div class="perf-chart-label">${label}</div>
+                      <div class="perf-chart-count">${m.count} task${m.count > 1 ? 's' : ''}</div>
+                    </div>`;
+                }).join('')}
+              </div>
+              <div style="display:flex; align-items:center; gap:0.75rem; margin-top:1rem; font-size:0.75rem; color:var(--text-muted);">
+                <span style="display:inline-flex; align-items:center; gap:0.3rem;"><span style="width:16px;height:2px;background:var(--warning);display:inline-block;"></span> 80% benchmark</span>
+              </div>
+            </div>
+          </div>`;
+      }
+
+      // Category breakdown
+      let categoryHtml = '';
+      if (data.categoryStats.length > 0) {
+        categoryHtml = `
+          <div class="card">
+            <div class="card-header"><h3>Performance by Category</h3></div>
+            <div class="card-body" style="padding:0;">
+              <table class="data-table">
+                <thead><tr><th>Category</th><th>Tasks</th><th>Avg Score</th><th>Range</th></tr></thead>
+                <tbody>
+                  ${data.categoryStats.map(c => {
+                    const avg = +c.avg_score;
+                    const cls = avg >= 80 ? 'badge-green' : avg >= 60 ? 'badge-orange' : 'badge-red';
+                    return `<tr>
+                      <td style="font-weight:600;">${escHtml(c.category)}</td>
+                      <td>${c.count}</td>
+                      <td><span class="badge ${cls}">${avg}%</span></td>
+                      <td style="font-size:0.82rem; color:var(--text-secondary); font-family:'JetBrains Mono',monospace;">${c.min_score}% – ${c.max_score}%</td>
+                    </tr>`;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>`;
+      }
+
+      // Scored tasks history
+      let historyHtml = '';
+      if (data.scoredTasks.length > 0) {
+        historyHtml = `
+          <div class="card">
+            <div class="card-header"><h3>Score History</h3></div>
+            <div class="card-body" style="padding:0;">
+              <!-- Desktop table -->
+              <div class="desktop-only">
+                <table class="data-table">
+                  <thead><tr><th>Task</th><th>Category</th><th>Priority</th><th>Score</th><th>Completed</th></tr></thead>
+                  <tbody>
+                    ${data.scoredTasks.map(t => `
+                      <tr>
+                        <td style="font-weight:600;">${escHtml(t.title)}</td>
+                        <td style="font-size:0.82rem; color:var(--text-secondary);">${escHtml(t.category)}</td>
+                        <td><span class="priority-dot ${t.priority}"></span>${t.priority}</td>
+                        <td>${scoreBadge(t.score)}</td>
+                        <td style="font-size:0.82rem; color:var(--text-muted); font-family:'JetBrains Mono',monospace;">${t.completed_at ? t.completed_at.slice(0,10) : '—'}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+              <!-- Mobile cards -->
+              <div class="mobile-only" style="flex-direction:column; gap:0; padding:0;">
+                ${data.scoredTasks.map(t => `
+                  <div style="padding:0.85rem 1rem; border-bottom:1px solid var(--border);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.3rem;">
+                      <span style="font-weight:600; font-size:0.88rem;">${escHtml(t.title)}</span>
+                      ${scoreBadge(t.score)}
+                    </div>
+                    <div style="font-size:0.75rem; color:var(--text-muted); display:flex; gap:0.75rem;">
+                      <span>${escHtml(t.category)}</span>
+                      <span>${t.completed_at ? t.completed_at.slice(0,10) : ''}</span>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>`;
+      }
+
+      document.getElementById('pageBody').innerHTML = hasData ? `
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon ${o.avgScore >= 80 ? 'green' : o.avgScore >= 60 ? 'orange' : 'red'}">★</div>
+            <div class="stat-value">${o.avgScore}%</div>
+            <div class="stat-label">Average Score</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon blue">✓</div>
+            <div class="stat-value">${o.scoredTasks}</div>
+            <div class="stat-label">Scored Tasks</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon green">▲</div>
+            <div class="stat-value">${o.highestScore}%</div>
+            <div class="stat-label">Best Score</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon ${o.lowestScore >= 80 ? 'green' : o.lowestScore >= 60 ? 'orange' : 'red'}">▼</div>
+            <div class="stat-value">${o.lowestScore}%</div>
+            <div class="stat-label">Lowest Score</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:1.5rem;">
+          <div class="card">
+            <div class="card-body">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+                <span style="font-size:0.88rem; font-weight:600;">Benchmark Status</span>
+                <span style="font-size:0.88rem; font-weight:700; color:var(--green-primary);">${benchmarkPct}% above 80%</span>
+              </div>
+              <div class="progress-bar" style="height:10px;">
+                <div class="progress-fill" style="width:${benchmarkPct}%;"></div>
+              </div>
+              <div style="display:flex; justify-content:space-between; margin-top:0.75rem; font-size:0.82rem; color:var(--text-secondary);">
+                <span>${o.aboveBenchmark} task${o.aboveBenchmark !== 1 ? 's' : ''} meet benchmark (80%+)</span>
+                <span>${o.belowBenchmark} below</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        ${trendHtml}
+        <div style="margin-top:1.5rem;">${categoryHtml}</div>
+        <div style="margin-top:1.5rem;">${historyHtml}</div>
+      ` : `
+        <div class="empty-state">
+          <div class="icon">★</div>
+          <h3>No scores yet</h3>
+          <p>Once your admin scores your completed tasks, your performance data will appear here.</p>
+          <button class="btn btn-secondary btn-sm" onclick="navigateTo('tasks')" style="margin-top:1rem;">View My Tasks</button>
+        </div>
       `;
     } catch (err) { document.getElementById('pageBody').innerHTML = `<p>${err.message}</p>`; }
   },

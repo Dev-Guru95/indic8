@@ -336,6 +336,64 @@ app.get('/api/interns/:id/stats', async (req, res) => {
   } catch (e) { res.status(500).json(safeError(e)); }
 });
 
+// ── Intern Performance Analytics ───────────────────────────────────────────
+app.get('/api/interns/:id/performance', async (req, res) => {
+  try {
+    if (!isPositiveInt(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+    const id = req.params.id;
+
+    const [overview, scoredTasks, categoryStats, monthlyTrend] = await Promise.all([
+      queryOne(`
+        SELECT
+          COUNT(*) FILTER (WHERE score IS NOT NULL) as scored_tasks,
+          ROUND(AVG(score) FILTER (WHERE score IS NOT NULL)) as avg_score,
+          MIN(score) FILTER (WHERE score IS NOT NULL) as lowest_score,
+          MAX(score) FILTER (WHERE score IS NOT NULL) as highest_score,
+          COUNT(*) FILTER (WHERE score >= 80) as above_benchmark,
+          COUNT(*) FILTER (WHERE score IS NOT NULL AND score < 80) as below_benchmark
+        FROM tasks WHERE intern_id = $1
+      `, [id]),
+      query(`
+        SELECT id, title, category, priority, score, completed_at, created_at
+        FROM tasks WHERE intern_id = $1 AND score IS NOT NULL
+        ORDER BY completed_at DESC LIMIT 50
+      `, [id]),
+      query(`
+        SELECT category,
+          COUNT(*) as count,
+          ROUND(AVG(score)) as avg_score,
+          MIN(score) as min_score,
+          MAX(score) as max_score
+        FROM tasks WHERE intern_id = $1 AND score IS NOT NULL
+        GROUP BY category ORDER BY avg_score DESC
+      `, [id]),
+      query(`
+        SELECT
+          TO_CHAR(completed_at, 'YYYY-MM') as month,
+          COUNT(*) as count,
+          ROUND(AVG(score)) as avg_score
+        FROM tasks WHERE intern_id = $1 AND score IS NOT NULL AND completed_at IS NOT NULL
+        GROUP BY TO_CHAR(completed_at, 'YYYY-MM')
+        ORDER BY month ASC LIMIT 12
+      `, [id]),
+    ]);
+
+    res.json({
+      overview: {
+        scoredTasks: +overview.scored_tasks,
+        avgScore: overview.avg_score ? +overview.avg_score : null,
+        lowestScore: overview.lowest_score != null ? +overview.lowest_score : null,
+        highestScore: overview.highest_score != null ? +overview.highest_score : null,
+        aboveBenchmark: +overview.above_benchmark,
+        belowBenchmark: +overview.below_benchmark,
+      },
+      scoredTasks,
+      categoryStats,
+      monthlyTrend,
+    });
+  } catch (e) { res.status(500).json(safeError(e)); }
+});
+
 // ── Admin Routes (login required) ──────────────────────────────────────────
 
 app.post('/api/admin/interns', requireAdmin, async (req, res) => {
