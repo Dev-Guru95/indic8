@@ -43,39 +43,92 @@ function closeModal() {
 // ── Landing Screen ──────────────────────────────────────────────────────────
 function switchLandingTab(tab) {
   document.querySelectorAll('.login-tab').forEach((t, i) => {
-    t.classList.toggle('active', (tab === 'intern' ? i === 0 : i === 1));
+    t.classList.toggle('active', (tab === 'intern' || tab === 'signup') ? i === 0 : i === 1);
   });
   document.getElementById('internSelectPanel').classList.toggle('hidden', tab !== 'intern');
+  document.getElementById('internSignupPanel').classList.toggle('hidden', tab !== 'signup');
   document.getElementById('adminLoginForm').classList.toggle('hidden', tab !== 'admin');
 }
 
-async function loadInternSelector() {
+async function handleInternLogin(e) {
+  e.preventDefault();
   try {
-    const interns = await api('/api/interns');
-    const sel = document.getElementById('internSelector');
-    if (interns.length === 0) {
-      sel.innerHTML = '<option value="">No interns registered yet</option>';
+    const data = await api('/api/intern/login', {
+      method: 'POST',
+      body: {
+        email: document.getElementById('internLoginEmail').value,
+        password: document.getElementById('internLoginPass').value,
+      }
+    });
+    currentUser = {
+      id: data.id,
+      name: data.name,
+      department: data.department,
+      avatarColor: data.avatarColor,
+      status: data.status,
+    };
+    if (data.status === 'pending') {
+      showPendingScreen();
+    } else if (data.status === 'active') {
+      enterApp('intern');
+      toast(`Welcome back, ${data.name}!`);
     } else {
-      sel.innerHTML = '<option value="">Choose your name...</option>' +
-        interns.map(i => `<option value="${i.id}" data-name="${escHtml(i.full_name)}" data-dept="${escHtml(i.department)}" data-color="${i.avatar_color}">${escHtml(i.full_name)} — ${escHtml(i.department)}</option>`).join('');
+      toast('Your account is ' + data.status + '. Contact your administrator.', 'error');
     }
-  } catch (e) {
-    document.getElementById('internSelector').innerHTML = '<option value="">Error loading interns</option>';
-  }
+  } catch (err) { toast(err.message, 'error'); }
+  return false;
 }
 
-function enterAsIntern() {
-  const sel = document.getElementById('internSelector');
-  const opt = sel.options[sel.selectedIndex];
-  if (!sel.value) return toast('Please select your name', 'error');
-  currentUser = {
-    id: parseInt(sel.value),
-    name: opt.dataset.name,
-    department: opt.dataset.dept,
-    avatarColor: opt.dataset.color,
-  };
-  enterApp('intern');
-  toast(`Welcome, ${currentUser.name}!`);
+async function handleInternSignup(e) {
+  e.preventDefault();
+  try {
+    await api('/api/intern/signup', {
+      method: 'POST',
+      body: {
+        full_name: document.getElementById('signupName').value,
+        email: document.getElementById('signupEmail').value,
+        password: document.getElementById('signupPass').value,
+        department: document.getElementById('signupDept').value,
+      }
+    });
+    showPendingScreen();
+    toast('Signup successful! Waiting for admin approval.');
+  } catch (err) { toast(err.message, 'error'); }
+  return false;
+}
+
+function showPendingScreen() {
+  document.getElementById('landingScreen').classList.add('hidden');
+  document.getElementById('appLayout').classList.add('hidden');
+  document.getElementById('pendingScreen').classList.remove('hidden');
+  if (window._pendingPoll) clearInterval(window._pendingPoll);
+  window._pendingPoll = setInterval(checkApprovalStatus, 5000);
+}
+
+async function checkApprovalStatus() {
+  try {
+    const session = await api('/api/session');
+    if (session.role === 'intern' && session.status === 'active') {
+      clearInterval(window._pendingPoll);
+      currentUser = {
+        id: session.id,
+        name: session.name,
+        department: session.department,
+        avatarColor: session.avatarColor,
+        status: session.status,
+      };
+      document.getElementById('pendingScreen').classList.add('hidden');
+      enterApp('intern');
+      toast(`Welcome, ${session.name}! Your account has been approved.`);
+    }
+  } catch (e) { /* silent */ }
+}
+
+function backToLogin() {
+  if (window._pendingPoll) clearInterval(window._pendingPoll);
+  document.getElementById('pendingScreen').classList.add('hidden');
+  document.getElementById('landingScreen').classList.remove('hidden');
+  api('/api/logout', { method: 'POST' }).catch(() => {});
 }
 
 async function handleAdminLogin(e) {
@@ -93,9 +146,7 @@ async function handleAdminLogin(e) {
 }
 
 async function handleLogout() {
-  if (currentRole === 'admin') {
-    await api('/api/logout', { method: 'POST' });
-  }
+  await api('/api/logout', { method: 'POST' }).catch(() => {});
   currentRole = null;
   currentPage = null;
   currentUser = {};
@@ -264,7 +315,7 @@ function moodEmoji(mood) {
 
 function statusBadge(status) {
   const map = {
-    active: 'badge-green', completed: 'badge-blue', suspended: 'badge-red',
+    pending: 'badge-yellow', active: 'badge-green', completed: 'badge-blue', suspended: 'badge-red',
     todo: 'badge-gray', in_progress: 'badge-blue', review: 'badge-orange',
     submitted: 'badge-orange', reviewed: 'badge-green', draft: 'badge-gray',
     low: 'badge-gray', medium: 'badge-blue', high: 'badge-orange', critical: 'badge-red',
@@ -816,6 +867,12 @@ const adminPages = {
             <div class="stat-value">${stats.pendingReports}</div>
             <div class="stat-label">Pending Reviews</div>
           </div>
+          ${stats.pendingInterns > 0 ? `
+          <div class="stat-card" style="cursor:pointer; border:1px solid var(--warning);" onclick="navigateTo('interns')">
+            <div class="stat-icon orange">⏳</div>
+            <div class="stat-value">${stats.pendingInterns}</div>
+            <div class="stat-label">Pending Approvals</div>
+          </div>` : ''}
           <div class="stat-card">
             <div class="stat-icon blue">✓</div>
             <div class="stat-value">${stats.totalTasks}</div>
@@ -894,16 +951,23 @@ const adminPages = {
           ${interns.length === 0
             ? '<div class="empty-state"><div class="icon">👥</div><h3>No interns yet</h3><p>Click "Add Intern" to register a new intern.</p></div>'
             : interns.map(i => `
-              <div class="intern-card" data-name="${escHtml(i.full_name.toLowerCase())}" onclick="viewInternDetail(${i.id})">
+              <div class="intern-card${i.status === 'pending' ? ' pending-card' : ''}" data-name="${escHtml(i.full_name.toLowerCase())}" onclick="viewInternDetail(${i.id})" style="${i.status === 'pending' ? 'border-left:3px solid var(--warning);' : ''}">
                 <div class="user-avatar" style="background:${i.avatar_color}">${i.full_name.charAt(0)}</div>
                 <div class="intern-info">
                   <div class="intern-name">${escHtml(i.full_name)}</div>
                   <div class="intern-dept">${escHtml(i.department)} · ${escHtml(i.intern_id)} · Started ${i.start_date}</div>
                 </div>
-                <div class="intern-stats">
-                  <span>📋 ${i.total_reports} reports</span>
-                  <span>✓ ${i.completed_tasks}/${i.total_tasks} tasks</span>
-                </div>
+                ${i.status === 'pending' ? `
+                  <div class="intern-stats" style="gap:0.5rem;">
+                    <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); approveIntern(${i.id})">Approve</button>
+                    <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); rejectIntern(${i.id})">Reject</button>
+                  </div>
+                ` : `
+                  <div class="intern-stats">
+                    <span>📋 ${i.total_reports} reports</span>
+                    <span>✓ ${i.completed_tasks}/${i.total_tasks} tasks</span>
+                  </div>
+                `}
                 ${statusBadge(i.status)}
               </div>
             `).join('')
@@ -1120,9 +1184,12 @@ async function viewInternDetail(id) {
         `).join('')}
       ` : ''}
     `, `
-      ${i.status === 'active'
-        ? `<button class="btn btn-danger btn-sm" onclick="changeInternStatus(${i.id}, 'suspended')">Suspend</button>`
-        : `<button class="btn btn-primary btn-sm" onclick="changeInternStatus(${i.id}, 'active')">Reactivate</button>`
+      ${i.status === 'pending'
+        ? `<button class="btn btn-primary btn-sm" onclick="changeInternStatus(${i.id}, 'active')">Approve</button>
+           <button class="btn btn-danger btn-sm" onclick="changeInternStatus(${i.id}, 'suspended')">Reject</button>`
+        : i.status === 'active'
+          ? `<button class="btn btn-danger btn-sm" onclick="changeInternStatus(${i.id}, 'suspended')">Suspend</button>`
+          : `<button class="btn btn-primary btn-sm" onclick="changeInternStatus(${i.id}, 'active')">Reactivate</button>`
       }
       <div style="flex:1"></div>
       <button class="btn btn-secondary" onclick="closeModal()">Close</button>
@@ -1133,6 +1200,24 @@ async function viewInternDetail(id) {
 async function changeInternStatus(id, status) {
   await api(`/api/admin/interns/${id}/status`, { method: 'PUT', body: { status } });
   closeModal(); toast(`Intern ${status}`); navigateTo('interns');
+}
+
+async function approveIntern(id) {
+  try {
+    await api(`/api/admin/interns/${id}/status`, { method: 'PUT', body: { status: 'active' } });
+    toast('Intern approved!');
+    navigateTo('interns');
+    loadNotifications();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function rejectIntern(id) {
+  if (!confirm('Reject this intern signup? This will suspend their account.')) return;
+  try {
+    await api(`/api/admin/interns/${id}/status`, { method: 'PUT', body: { status: 'suspended' } });
+    toast('Intern rejected');
+    navigateTo('interns');
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 function openAddInternModal() {
@@ -1375,7 +1460,6 @@ function filterTasks(q) {
 
 // ── Init ────────────────────────────────────────────────────────────────────
 (async function init() {
-  // Check if admin is already logged in
   try {
     const session = await api('/api/session');
     if (session.role === 'admin') {
@@ -1383,7 +1467,22 @@ function filterTasks(q) {
       enterApp('admin');
       return;
     }
+    if (session.role === 'intern') {
+      currentUser = {
+        id: session.id,
+        name: session.name,
+        department: session.department,
+        avatarColor: session.avatarColor,
+        status: session.status,
+      };
+      if (session.status === 'pending') {
+        showPendingScreen();
+        return;
+      }
+      if (session.status === 'active') {
+        enterApp('intern');
+        return;
+      }
+    }
   } catch (e) { /* ignore */ }
-  // Load intern selector for the landing page
-  loadInternSelector();
 })();

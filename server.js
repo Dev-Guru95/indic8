@@ -36,10 +36,11 @@ async function initDB() {
         intern_id TEXT UNIQUE NOT NULL,
         full_name TEXT NOT NULL,
         email TEXT UNIQUE NOT NULL,
+        password TEXT,
         department TEXT NOT NULL,
         start_date DATE NOT NULL,
         avatar_color TEXT DEFAULT '#00e676',
-        status TEXT DEFAULT 'active',
+        status TEXT DEFAULT 'pending',
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
 
@@ -73,6 +74,7 @@ async function initDB() {
       );
 
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS score INTEGER;
+      ALTER TABLE interns ADD COLUMN IF NOT EXISTS password TEXT;
 
       CREATE TABLE IF NOT EXISTS notifications (
         id SERIAL PRIMARY KEY,
@@ -143,7 +145,7 @@ function isPositiveInt(val) {
 }
 
 const VALID_STATUSES = {
-  intern: ['active', 'completed', 'suspended'],
+  intern: ['pending', 'active', 'completed', 'suspended'],
   task: ['todo', 'in_progress', 'review', 'completed'],
   report: ['draft', 'submitted', 'reviewed'],
   mood: ['great', 'good', 'neutral', 'struggling'],
@@ -210,13 +212,85 @@ app.post('/api/admin/login', loginLimiter, async (req, res) => {
 });
 
 app.post('/api/logout', (req, res) => {
-  req.session.destroy();
+  req.session.destroy(() => {});
   res.json({ success: true });
 });
 
-app.get('/api/session', (req, res) => {
+app.get('/api/session', async (req, res) => {
   if (req.session.adminId) return res.json({ role: 'admin', name: req.session.adminName });
+  if (req.session.internId) {
+    const intern = await queryOne('SELECT id, full_name, department, avatar_color, status FROM interns WHERE id = $1', [req.session.internId]);
+    if (intern) {
+      return res.json({
+        role: 'intern',
+        id: intern.id,
+        name: intern.full_name,
+        department: intern.department,
+        avatarColor: intern.avatar_color,
+        status: intern.status,
+      });
+    }
+  }
   res.json({ role: null });
+});
+
+// ── Intern Auth ────────────────────────────────────────────────────────────
+app.post('/api/intern/signup', loginLimiter, async (req, res) => {
+  try {
+    const full_name = sanitize(req.body.full_name, 100);
+    const email = sanitize(req.body.email, 100).toLowerCase();
+    const password = req.body.password || '';
+    const department = sanitize(req.body.department, 50);
+
+    if (!full_name || full_name.length < 2) return res.status(400).json({ error: 'Valid name required (at least 2 characters)' });
+    if (!isValidEmail(email)) return res.status(400).json({ error: 'Valid email required' });
+    if (!password || password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    if (!department) return res.status(400).json({ error: 'Department required' });
+
+    const intern_id = 'INT-' + Date.now().toString(36).toUpperCase();
+    const colors = ['#00e676','#00bcd4','#7c4dff','#ff9100','#ff5252','#64ffda'];
+    const avatar_color = colors[Math.floor(Math.random() * colors.length)];
+    const hash = await bcrypt.hash(password, 12);
+    const start_date = new Date().toISOString().slice(0, 10);
+
+    const result = await queryOne(
+      'INSERT INTO interns (intern_id, full_name, email, password, department, start_date, avatar_color, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id',
+      [intern_id, full_name, email, hash, department, start_date, avatar_color, 'pending']
+    );
+
+    await pool.query('INSERT INTO notifications (user_type, user_id, message) VALUES ($1,$2,$3)',
+      ['admin', 1, `New signup: ${full_name} (${department}) is awaiting approval`]);
+
+    res.json({ success: true, message: 'Signup successful! Please wait for admin approval.' });
+  } catch (e) {
+    if (e.code === '23505') return res.status(400).json({ error: 'Email already registered' });
+    res.status(500).json(safeError(e));
+  }
+});
+
+app.post('/api/intern/login', loginLimiter, async (req, res) => {
+  try {
+    const email = sanitize(req.body.email, 100).toLowerCase();
+    const password = req.body.password || '';
+    if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+
+    const intern = await queryOne('SELECT id, intern_id, full_name, email, password, department, avatar_color, status FROM interns WHERE email = $1', [email]);
+    if (!intern || !intern.password || !(await bcrypt.compare(password, intern.password))) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    req.session.internId = intern.id;
+    req.session.internName = intern.full_name;
+    req.session.internStatus = intern.status;
+    res.json({
+      success: true,
+      id: intern.id,
+      name: intern.full_name,
+      department: intern.department,
+      avatarColor: intern.avatar_color,
+      status: intern.status,
+    });
+  } catch (e) { res.status(500).json(safeError(e)); }
 });
 
 // ── Public Intern Routes (no login required) ────────────────────────────────
@@ -459,7 +533,13 @@ app.put('/api/admin/interns/:id/status', requireAdmin, async (req, res) => {
   try {
     if (!isPositiveInt(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
     if (!VALID_STATUSES.intern.includes(req.body.status)) return res.status(400).json({ error: 'Invalid status' });
+    const intern = await queryOne('SELECT id, full_name, status FROM interns WHERE id = $1', [req.params.id]);
+    if (!intern) return res.status(404).json({ error: 'Intern not found' });
     await pool.query('UPDATE interns SET status = $1 WHERE id = $2', [req.body.status, req.params.id]);
+    if (intern.status === 'pending' && req.body.status === 'active') {
+      await pool.query('INSERT INTO notifications (user_type, user_id, message) VALUES ($1,$2,$3)',
+        ['intern', intern.id, 'Your account has been approved! You can now access your dashboard.']);
+    }
     res.json({ success: true });
   } catch (e) { res.status(500).json(safeError(e)); }
 });
@@ -570,6 +650,7 @@ app.get('/api/admin/stats', requireAdmin, async (req, res) => {
       queryOne(`
         SELECT
           (SELECT COUNT(*) FROM interns WHERE status = 'active') as total_interns,
+          (SELECT COUNT(*) FROM interns WHERE status = 'pending') as pending_interns,
           (SELECT COUNT(*) FROM weekly_reports) as total_reports,
           (SELECT COUNT(*) FROM weekly_reports WHERE status = 'submitted') as pending_reports,
           (SELECT COUNT(*) FROM tasks) as total_tasks,
@@ -587,6 +668,7 @@ app.get('/api/admin/stats', requireAdmin, async (req, res) => {
 
     res.json({
       totalInterns: +counts.total_interns,
+      pendingInterns: +counts.pending_interns,
       totalReports: +counts.total_reports,
       pendingReports: +counts.pending_reports,
       totalTasks: +counts.total_tasks,
