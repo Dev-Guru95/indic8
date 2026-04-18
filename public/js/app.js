@@ -1165,7 +1165,7 @@ async function viewInternDetail(id) {
         </div>
         ${statusBadge(i.status)}
       </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; margin-bottom:1.5rem;">
+      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:0.5rem; margin-bottom:1.5rem;">
         <div style="text-align:center; padding:1rem; background:var(--bg-input); border-radius:var(--radius-md);">
           <div style="font-size:1.5rem; font-weight:800;">${data.tasks.length}</div>
           <div style="font-size:0.75rem; color:var(--text-muted);">Tasks</div>
