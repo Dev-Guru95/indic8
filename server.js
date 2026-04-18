@@ -363,6 +363,10 @@ app.put('/api/interns/:internId/tasks/:taskId/status', async (req, res) => {
     if (!isPositiveInt(req.params.internId) || !isPositiveInt(req.params.taskId)) return res.status(400).json({ error: 'Invalid ID' });
     const { status } = req.body;
     if (!VALID_STATUSES.task.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+
+    const existing = await queryOne('SELECT status FROM tasks WHERE id = $1 AND intern_id = $2', [req.params.taskId, req.params.internId]);
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+    if (existing.status === 'completed') return res.status(400).json({ error: 'Completed tasks cannot be changed. Contact your admin.' });
     const completed_at = status === 'completed' ? new Date().toISOString() : null;
 
     // Clear score when un-completing a task (admin will re-score)

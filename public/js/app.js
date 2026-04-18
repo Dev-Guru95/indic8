@@ -755,6 +755,12 @@ async function openInternTaskView(taskId) {
         <div style="font-size:0.78rem; color:var(--text-secondary);">${t.score >= 80 ? 'Meets benchmark' : t.score >= 60 ? 'Below benchmark' : 'Needs improvement'}</div>
       </div>` : ''}
     </div>
+    ${t.status === 'completed' ? `
+    <div style="padding:0.75rem 1rem; background:rgba(0,230,118,0.08); border:1px solid rgba(0,230,118,0.2); border-radius:var(--radius-md); display:flex; align-items:center; gap:0.5rem;">
+      <span style="color:var(--green-primary);">✓</span>
+      <span style="font-size:0.85rem; color:var(--text-secondary);">This task is completed and locked. Contact your admin for changes.</span>
+    </div>
+    ` : `
     <div class="form-group">
       <label>Update Progress</label>
       <select class="form-input" id="internTaskStatus">
@@ -762,9 +768,10 @@ async function openInternTaskView(taskId) {
           `<option value="${s}" ${t.status === s ? 'selected' : ''}>${s.replace(/_/g,' ')}</option>`).join('')}
       </select>
     </div>
+    `}
   `, `
     <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-    <button class="btn btn-primary" onclick="updateInternTaskStatus(${t.id})">Update Status</button>
+    ${t.status !== 'completed' ? `<button class="btn btn-primary" onclick="updateInternTaskStatus(${t.id})">Update Status</button>` : ''}
   `);
 }
 
