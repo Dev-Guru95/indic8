@@ -309,6 +309,14 @@ function timeAgo(dateStr) {
   return Math.floor(diff / 86400) + 'd ago';
 }
 
+function formatDateTime(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr + (dateStr.includes('Z') ? '' : 'Z'));
+  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  return `${date}, ${time}`;
+}
+
 function moodEmoji(mood) {
   return { great: '🟢', good: '🔵', neutral: '⚪', struggling: '🔴' }[mood] || '⚪';
 }
@@ -1013,7 +1021,7 @@ const adminPages = {
                   ${r.plans_next_week ? `<h4>Plans for Next Week</h4><p>${escHtml(r.plans_next_week)}</p>` : ''}
                 </div>
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border); flex-wrap:wrap; gap:0.5rem;">
-                  <span style="font-size:0.78rem; color:var(--text-muted);">${r.hours_worked}h · ${timeAgo(r.submitted_at)}</span>
+                  <span style="font-size:0.78rem; color:var(--text-muted);">${r.hours_worked}h · Submitted: ${formatDateTime(r.submitted_at)}</span>
                   ${r.status !== 'reviewed'
                     ? `<button class="btn btn-primary btn-sm" onclick="openReviewModal(${r.id})">Review</button>`
                     : `<span class="badge badge-green">✓ Reviewed</span>`
@@ -1050,7 +1058,7 @@ const adminPages = {
             ${tasks.length === 0
               ? '<div class="empty-state"><div class="icon">✓</div><h3>No tasks yet</h3><p>Click "Assign Task" to give an intern work.</p></div>'
               : `<table class="data-table" id="tasksTable">
-                  <thead><tr><th>Task</th><th>Assigned To</th><th>Category</th><th>Priority</th><th>Status</th><th>Score</th><th>Due</th><th></th></tr></thead>
+                  <thead><tr><th>Task</th><th>Assigned To</th><th>Category</th><th>Priority</th><th>Status</th><th>Score</th><th>Due</th><th>Completed At</th><th></th></tr></thead>
                   <tbody>
                     ${tasks.map(t => `
                       <tr data-search="${escHtml((t.title + ' ' + t.intern_name).toLowerCase())}">
@@ -1064,6 +1072,7 @@ const adminPages = {
                         <td>${statusBadge(t.status)}</td>
                         <td>${t.score != null ? scoreBadge(t.score) : '<span style="color:var(--text-muted);">—</span>'}</td>
                         <td style="font-size:0.82rem; color:var(--text-muted); font-family:'JetBrains Mono',monospace;">${t.due_date || '—'}</td>
+                        <td style="font-size:0.78rem; color:${t.completed_at ? 'var(--green-primary)' : 'var(--text-muted)'}; font-family:'JetBrains Mono',monospace;">${t.completed_at ? formatDateTime(t.completed_at) : '—'}</td>
                         <td>
                           <button class="btn-ghost btn-icon" onclick="openAdminTaskEdit(${t.id})" title="Edit">✎</button>
                           <button class="btn-ghost btn-icon" onclick="deleteAdminTask(${t.id})" title="Delete" style="color:var(--danger);">✕</button>
@@ -1095,6 +1104,7 @@ const adminPages = {
                   <span>${statusBadge(t.priority)}</span>
                   ${t.due_date ? `<span>Due ${t.due_date}</span>` : ''}
                   ${t.score != null ? scoreBadge(t.score) : ''}
+                  ${t.completed_at ? `<span style="color:var(--green-primary);">✓ ${formatDateTime(t.completed_at)}</span>` : ''}
                 </div>
               </div>
             `).join('')
