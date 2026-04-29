@@ -1,3 +1,4 @@
+try { require('dotenv').config(); } catch { /* dotenv optional */ }
 const express = require('express');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
