@@ -10,9 +10,13 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ── Database Setup (with proper pool config) ────────────────────────────────
+const useSSL =
+  process.env.PGSSL === 'true' ||
+  (process.env.DATABASE_URL && /supabase|render|amazonaws|neon|heroku/i.test(process.env.DATABASE_URL));
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+  ssl: useSSL ? { rejectUnauthorized: false } : false,
   max: 20,
   min: 2,
   idleTimeoutMillis: 30000,
