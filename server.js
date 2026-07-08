@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const session = require('express-session');
 const path = require('path');
+const crypto = require('crypto');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
@@ -89,6 +90,17 @@ async function initDB() {
         is_read BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      -- Password reset tokens (interns only). We store a SHA-256 hash of the
+      -- token, never the token itself, so a DB leak can't be used to reset.
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id SERIAL PRIMARY KEY,
+        intern_id INTEGER NOT NULL REFERENCES interns(id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        used_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
 
     // Create indexes for performance
@@ -100,6 +112,8 @@ async function initDB() {
       CREATE INDEX IF NOT EXISTS idx_reports_intern_id ON weekly_reports(intern_id);
       CREATE INDEX IF NOT EXISTS idx_reports_status ON weekly_reports(status);
       CREATE INDEX IF NOT EXISTS idx_notifications_type_user ON notifications(user_type, user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_reset_tokens_hash ON password_reset_tokens(token_hash);
+      CREATE INDEX IF NOT EXISTS idx_reset_tokens_intern ON password_reset_tokens(intern_id);
     `);
 
     // Seed default admin (use env vars if available)
@@ -157,6 +171,64 @@ const VALID_STATUSES = {
   priority: ['low', 'medium', 'high', 'critical'],
   category: ['General', 'Development', 'Research', 'Design', 'Testing', 'Documentation', 'Meeting'],
 };
+
+// ── Password Reset Helpers ───────────────────────────────────────────────────
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+// Create a single-use reset token for an intern. Any outstanding tokens for the
+// same intern are invalidated first so only the most recent link works.
+async function createResetToken(internId) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
+  await pool.query('UPDATE password_reset_tokens SET used_at = NOW() WHERE intern_id = $1 AND used_at IS NULL', [internId]);
+  await pool.query('INSERT INTO password_reset_tokens (intern_id, token_hash, expires_at) VALUES ($1,$2,$3)', [internId, hashToken(token), expiresAt]);
+  return token;
+}
+
+function resetLinkFor(req, token) {
+  const base = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+  return `${base.replace(/\/$/, '')}/?reset_token=${token}`;
+}
+
+// Optional SMTP mailer. Only initialised when SMTP_HOST is configured; otherwise
+// the reset flow falls back to admin-assisted delivery.
+let _mailer; // undefined = not tried, null/false = unavailable, object = transporter
+function getMailer() {
+  if (_mailer !== undefined) return _mailer;
+  if (!process.env.SMTP_HOST) { _mailer = null; return _mailer; }
+  try {
+    const nodemailer = require('nodemailer');
+    const port = parseInt(process.env.SMTP_PORT) || 587;
+    _mailer = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port,
+      secure: process.env.SMTP_SECURE === 'true' || port === 465,
+      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
+    });
+  } catch (e) {
+    console.warn('  ⚠ Email delivery disabled:', e.message);
+    _mailer = null;
+  }
+  return _mailer;
+}
+
+async function sendResetEmail(to, link) {
+  const mailer = getMailer();
+  if (!mailer) return false;
+  await mailer.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@indic8.app',
+    to,
+    subject: 'indic8 — Reset your password',
+    text: `You requested a password reset for your indic8 intern account.\n\n`
+      + `Open this link to set a new password (valid for 1 hour, single use):\n${link}\n\n`
+      + `If you didn't request this, you can safely ignore this email — your password won't change.`,
+  });
+  return true;
+}
 
 // ── Middleware ───────────────────────────────────────────────────────────────
 app.set('trust proxy', 1);
@@ -295,6 +367,72 @@ app.post('/api/intern/login', loginLimiter, async (req, res) => {
       avatarColor: intern.avatar_color,
       status: intern.status,
     });
+  } catch (e) { res.status(500).json(safeError(e)); }
+});
+
+// ── Intern Password Reset (interns only — never touches admin accounts) ──────
+
+// Step 1: intern requests a reset by email. Always responds generically so the
+// endpoint can't be used to discover which emails are registered.
+app.post('/api/intern/forgot-password', loginLimiter, async (req, res) => {
+  try {
+    const email = sanitize(req.body.email, 100).toLowerCase();
+    if (!isValidEmail(email)) return res.status(400).json({ error: 'Valid email required' });
+
+    const emailConfigured = !!process.env.SMTP_HOST;
+    const message = emailConfigured
+      ? 'If an account exists for that email, a password reset link has been sent.'
+      : 'If an account exists for that email, your administrator has been notified to help you reset your password.';
+
+    // Only interns can reset here — admins are never looked up.
+    const intern = await queryOne('SELECT id, full_name, email FROM interns WHERE email = $1', [email]);
+    if (intern) {
+      const token = await createResetToken(intern.id);
+      const link = resetLinkFor(req, token);
+      let emailed = false;
+      try { emailed = await sendResetEmail(intern.email, link); }
+      catch (err) { console.error('Reset email failed:', err.message); }
+      if (!emailed) {
+        // Fallback delivery: notify the admin, who can generate/hand over a link.
+        await pool.query('INSERT INTO notifications (user_type, user_id, message) VALUES ($1,$2,$3)',
+          ['admin', 1, `${intern.full_name} requested a password reset — open their profile to generate a reset link.`]);
+        if (process.env.NODE_ENV !== 'production') console.log(`[password-reset] ${intern.email}: ${link}`);
+      }
+    }
+    res.json({ success: true, message });
+  } catch (e) { res.status(500).json(safeError(e)); }
+});
+
+// Step 2 (optional): check a token is still valid before showing the form.
+app.get('/api/intern/reset-password/verify', async (req, res) => {
+  try {
+    const token = typeof req.query.token === 'string' ? req.query.token : '';
+    if (!token) return res.json({ valid: false });
+    const row = await queryOne(
+      'SELECT id FROM password_reset_tokens WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()',
+      [hashToken(token)]);
+    res.json({ valid: !!row });
+  } catch (e) { res.status(500).json(safeError(e)); }
+});
+
+// Step 3: consume the token and set the new password.
+app.post('/api/intern/reset-password', loginLimiter, async (req, res) => {
+  try {
+    const token = typeof req.body.token === 'string' ? req.body.token : '';
+    const password = req.body.password || '';
+    if (!token) return res.status(400).json({ error: 'Invalid reset link' });
+    if (!password || password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+    const row = await queryOne(
+      'SELECT id, intern_id FROM password_reset_tokens WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()',
+      [hashToken(token)]);
+    if (!row) return res.status(400).json({ error: 'This reset link is invalid or has expired. Please request a new one.' });
+
+    const hash = await bcrypt.hash(password, 12);
+    await pool.query('UPDATE interns SET password = $1 WHERE id = $2', [hash, row.intern_id]);
+    // Burn this and any sibling tokens for the intern so the link is single-use.
+    await pool.query('UPDATE password_reset_tokens SET used_at = NOW() WHERE intern_id = $1 AND used_at IS NULL', [row.intern_id]);
+    res.json({ success: true, message: 'Your password has been reset. You can now sign in.' });
   } catch (e) { res.status(500).json(safeError(e)); }
 });
 
@@ -510,10 +648,13 @@ app.get('/api/admin/interns', requireAdmin, async (req, res) => {
       SELECT i.*,
         COALESCE(t.total_tasks, 0) as total_tasks,
         COALESCE(t.completed_tasks, 0) as completed_tasks,
+        t.avg_score,
         COALESCE(r.total_reports, 0) as total_reports
       FROM interns i
       LEFT JOIN (
-        SELECT intern_id, COUNT(*) as total_tasks, COUNT(*) FILTER (WHERE status = 'completed') as completed_tasks
+        SELECT intern_id, COUNT(*) as total_tasks,
+          COUNT(*) FILTER (WHERE status = 'completed') as completed_tasks,
+          ROUND(AVG(score) FILTER (WHERE score IS NOT NULL)) as avg_score
         FROM tasks GROUP BY intern_id
       ) t ON t.intern_id = i.id
       LEFT JOIN (
@@ -530,11 +671,20 @@ app.get('/api/admin/interns/:id', requireAdmin, async (req, res) => {
     if (!isPositiveInt(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
     const intern = await queryOne('SELECT id, intern_id, full_name, email, department, start_date, avatar_color, status, created_at FROM interns WHERE id = $1', [req.params.id]);
     if (!intern) return res.status(404).json({ error: 'Not found' });
-    const [tasks, reports] = await Promise.all([
-      query('SELECT id, title, category, priority, status, due_date, completed_at, created_at FROM tasks WHERE intern_id = $1 ORDER BY created_at DESC LIMIT 50', [req.params.id]),
+    const [tasks, reports, scoreAgg] = await Promise.all([
+      query('SELECT id, title, category, priority, status, due_date, completed_at, score, created_at FROM tasks WHERE intern_id = $1 ORDER BY created_at DESC LIMIT 50', [req.params.id]),
       query('SELECT id, week_start, week_end, summary, mood, status, submitted_at FROM weekly_reports WHERE intern_id = $1 ORDER BY submitted_at DESC LIMIT 50', [req.params.id]),
+      queryOne(`SELECT COUNT(*) FILTER (WHERE score IS NOT NULL) as scored_tasks, ROUND(AVG(score) FILTER (WHERE score IS NOT NULL)) as avg_score FROM tasks WHERE intern_id = $1`, [req.params.id]),
     ]);
-    res.json({ intern, tasks, reports });
+    res.json({
+      intern,
+      tasks,
+      reports,
+      scores: {
+        scoredTasks: +scoreAgg.scored_tasks,
+        avgScore: scoreAgg.avg_score != null ? +scoreAgg.avg_score : null,
+      },
+    });
   } catch (e) { res.status(500).json(safeError(e)); }
 });
 
@@ -550,6 +700,18 @@ app.put('/api/admin/interns/:id/status', requireAdmin, async (req, res) => {
         ['intern', intern.id, 'Your account has been approved! You can now access your dashboard.']);
     }
     res.json({ success: true });
+  } catch (e) { res.status(500).json(safeError(e)); }
+});
+
+// Admin-assisted password reset: generate a one-time link to hand to the intern.
+// Always available (works even without email configured).
+app.post('/api/admin/interns/:id/reset-link', requireAdmin, async (req, res) => {
+  try {
+    if (!isPositiveInt(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+    const intern = await queryOne('SELECT id, full_name, email FROM interns WHERE id = $1', [req.params.id]);
+    if (!intern) return res.status(404).json({ error: 'Intern not found' });
+    const token = await createResetToken(intern.id);
+    res.json({ success: true, link: resetLinkFor(req, token), email: intern.email, expiresInMinutes: RESET_TOKEN_TTL_MS / 60000 });
   } catch (e) { res.status(500).json(safeError(e)); }
 });
 

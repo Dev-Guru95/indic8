@@ -131,6 +131,75 @@ function backToLogin() {
   api('/api/logout', { method: 'POST' }).catch(() => {});
 }
 
+// ── Password Reset (interns only) ───────────────────────────────────────────
+function openForgotPassword() {
+  openModal('Reset Password', `
+    <p style="color:var(--text-secondary); font-size:0.88rem; margin-bottom:1rem; line-height:1.5;">
+      Enter the email linked to your intern account and we'll send you a link to set a new password.
+    </p>
+    <form id="forgotForm" onsubmit="return submitForgotPassword(event)">
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" class="form-input" id="forgotEmail" placeholder="your@email.com" required>
+      </div>
+    </form>
+  `, `
+    <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+    <button class="btn btn-primary" onclick="document.getElementById('forgotForm').requestSubmit()">Send Reset Link</button>
+  `);
+}
+
+async function submitForgotPassword(e) {
+  e.preventDefault();
+  try {
+    const data = await api('/api/intern/forgot-password', {
+      method: 'POST',
+      body: { email: document.getElementById('forgotEmail').value }
+    });
+    closeModal();
+    toast(data.message || 'If an account exists, a reset link has been sent.');
+  } catch (err) { toast(err.message, 'error'); }
+  return false;
+}
+
+let _resetToken = null;
+async function showResetScreen(token) {
+  _resetToken = token;
+  ['landingScreen', 'pendingScreen', 'appLayout'].forEach(id => document.getElementById(id).classList.add('hidden'));
+  document.getElementById('resetScreen').classList.remove('hidden');
+  let valid = false;
+  try {
+    const v = await api('/api/intern/reset-password/verify?token=' + encodeURIComponent(token));
+    valid = !!v.valid;
+  } catch (e) { valid = false; }
+  document.getElementById('resetFormWrap').classList.toggle('hidden', !valid);
+  document.getElementById('resetInvalidWrap').classList.toggle('hidden', valid);
+}
+
+async function submitResetPassword(e) {
+  e.preventDefault();
+  const p1 = document.getElementById('resetNewPass').value;
+  const p2 = document.getElementById('resetConfirmPass').value;
+  if (p1 !== p2) { toast('Passwords do not match', 'error'); return false; }
+  try {
+    const data = await api('/api/intern/reset-password', {
+      method: 'POST',
+      body: { token: _resetToken, password: p1 }
+    });
+    toast(data.message || 'Password reset successful!');
+    exitResetScreen();
+  } catch (err) { toast(err.message, 'error'); }
+  return false;
+}
+
+function exitResetScreen() {
+  _resetToken = null;
+  history.replaceState(null, '', window.location.pathname);
+  document.getElementById('resetScreen').classList.add('hidden');
+  document.getElementById('landingScreen').classList.remove('hidden');
+  switchLandingTab('intern');
+}
+
 async function handleAdminLogin(e) {
   e.preventDefault();
   try {
@@ -981,6 +1050,7 @@ const adminPages = {
                   <div class="intern-stats">
                     <span>📋 ${i.total_reports} reports</span>
                     <span>✓ ${i.completed_tasks}/${i.total_tasks} tasks</span>
+                    <span title="Average score across all scored tasks">★ ${i.avg_score != null ? i.avg_score + '%' : 'No scores'}</span>
                   </div>
                 `}
                 ${statusBadge(i.status)}
@@ -1155,6 +1225,8 @@ async function viewInternDetail(id) {
     const i = data.intern;
     const taskPct = data.tasks.length > 0
       ? Math.round(data.tasks.filter(t => t.status === 'completed').length / data.tasks.length * 100) : 0;
+    const scores = data.scores || { scoredTasks: 0, avgScore: null };
+    const scoredTasks = data.tasks.filter(t => t.score != null);
     openModal(`${i.full_name}`, `
       <div style="display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem; padding-bottom:1.5rem; border-bottom:1px solid var(--border);">
         <div class="user-avatar" style="width:56px;height:56px;font-size:1.5rem;background:${i.avatar_color}">${i.full_name.charAt(0)}</div>
@@ -1165,7 +1237,7 @@ async function viewInternDetail(id) {
         </div>
         ${statusBadge(i.status)}
       </div>
-      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:0.5rem; margin-bottom:1.5rem;">
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(80px, 1fr)); gap:0.5rem; margin-bottom:1.5rem;">
         <div style="text-align:center; padding:1rem; background:var(--bg-input); border-radius:var(--radius-md);">
           <div style="font-size:1.5rem; font-weight:800;">${data.tasks.length}</div>
           <div style="font-size:0.75rem; color:var(--text-muted);">Tasks</div>
@@ -1178,7 +1250,25 @@ async function viewInternDetail(id) {
           <div style="font-size:1.5rem; font-weight:800; color:var(--green-primary);">${taskPct}%</div>
           <div style="font-size:0.75rem; color:var(--text-muted);">Completion</div>
         </div>
+        <div style="text-align:center; padding:1rem; background:var(--bg-input); border-radius:var(--radius-md);">
+          <div style="font-size:1.5rem; font-weight:800; color:${scores.avgScore == null ? 'var(--text-muted)' : scores.avgScore >= 80 ? 'var(--green-primary)' : scores.avgScore >= 60 ? 'var(--warning)' : 'var(--danger)'};">${scores.avgScore != null ? scores.avgScore + '%' : '—'}</div>
+          <div style="font-size:0.75rem; color:var(--text-muted);">Avg Score</div>
+        </div>
       </div>
+
+      <h4 style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:0.5rem;">Scores</h4>
+      ${scoredTasks.length === 0
+        ? '<p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:1rem;">No scores available yet.</p>'
+        : `<div style="margin-bottom:1rem;">${scoredTasks.slice(0, 8).map(t => `
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:0.55rem 0; border-bottom:1px solid var(--border); gap:0.75rem;">
+              <div style="min-width:0;">
+                <div style="font-weight:600; font-size:0.88rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escHtml(t.title)}</div>
+                <div style="font-size:0.72rem; color:var(--text-muted);">${escHtml(t.category)} · ${t.completed_at ? t.completed_at.slice(0,10) : (t.created_at ? t.created_at.slice(0,10) : '—')}</div>
+              </div>
+              ${scoreBadge(t.score)}
+            </div>
+          `).join('')}${scoredTasks.length > 8 ? `<div style="font-size:0.75rem; color:var(--text-muted); padding-top:0.5rem;">+ ${scoredTasks.length - 8} more scored task${scoredTasks.length - 8 > 1 ? 's' : ''}</div>` : ''}</div>`
+      }
       ${data.tasks.length > 0 ? `
         <h4 style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:0.5rem;">Recent Tasks</h4>
         ${data.tasks.slice(0, 5).map(t => `
@@ -1208,6 +1298,7 @@ async function viewInternDetail(id) {
           ? `<button class="btn btn-danger btn-sm" onclick="changeInternStatus(${i.id}, 'suspended')">Suspend</button>`
           : `<button class="btn btn-primary btn-sm" onclick="changeInternStatus(${i.id}, 'active')">Reactivate</button>`
       }
+      <button class="btn btn-secondary btn-sm" onclick="generateResetLink(${i.id})" title="Generate a one-time password reset link">🔑 Reset Link</button>
       <div style="flex:1"></div>
       <button class="btn btn-secondary" onclick="closeModal()">Close</button>
     `);
@@ -1217,6 +1308,34 @@ async function viewInternDetail(id) {
 async function changeInternStatus(id, status) {
   await api(`/api/admin/interns/${id}/status`, { method: 'PUT', body: { status } });
   closeModal(); toast(`Intern ${status}`); navigateTo('interns');
+}
+
+async function generateResetLink(id) {
+  try {
+    const data = await api(`/api/admin/interns/${id}/reset-link`, { method: 'POST' });
+    openModal('Password Reset Link', `
+      <p style="color:var(--text-secondary); font-size:0.88rem; margin-bottom:1rem; line-height:1.5;">
+        Share this one-time link with <strong>${escHtml(data.email)}</strong>. It expires in ${data.expiresInMinutes} minutes and can only be used once.
+      </p>
+      <div class="form-group">
+        <input type="text" class="form-input" id="resetLinkField" value="${escHtml(data.link)}" readonly onclick="this.select()" style="font-family:'JetBrains Mono',monospace; font-size:0.78rem;">
+      </div>
+    `, `
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      <button class="btn btn-primary" onclick="copyResetLink()">Copy Link</button>
+    `);
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+function copyResetLink() {
+  const field = document.getElementById('resetLinkField');
+  field.select();
+  const done = () => toast('Reset link copied!');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(field.value).then(done).catch(() => { document.execCommand('copy'); done(); });
+  } else {
+    document.execCommand('copy'); done();
+  }
 }
 
 async function approveIntern(id) {
@@ -1477,6 +1596,9 @@ function filterTasks(q) {
 
 // ── Init ────────────────────────────────────────────────────────────────────
 (async function init() {
+  // Password reset links arrive as /?reset_token=... — handle before anything else.
+  const resetToken = new URLSearchParams(window.location.search).get('reset_token');
+  if (resetToken) { showResetScreen(resetToken); return; }
   try {
     const session = await api('/api/session');
     if (session.role === 'admin') {
